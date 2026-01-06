@@ -1,12 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import Icon from '@/components/ui/icon';
+import { useAuth } from '@/contexts/AuthContext';
+import AuthDialog from '@/components/AuthDialog';
+import ModUploadDialog from '@/components/ModUploadDialog';
+import ModerationPanel from '@/components/ModerationPanel';
 
 const GAMES = [
   'Все игры',
@@ -117,20 +122,68 @@ export default function Index() {
   const [selectedGame, setSelectedGame] = useState('Все игры');
   const [selectedCategory, setSelectedCategory] = useState('Все');
   const [selectedMod, setSelectedMod] = useState<number | null>(null);
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [showModeration, setShowModeration] = useState(false);
+  const [mods, setMods] = useState(MODS_DATA);
+  const [loading, setLoading] = useState(false);
 
-  const filteredMods = MODS_DATA.filter((mod) => {
+  const { user, logout, isAuthenticated, isModerator } = useAuth();
+
+  useEffect(() => {
+    loadMods();
+  }, []);
+
+  const loadMods = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('https://functions.poehali.dev/f9e63e9b-bb97-4767-a24a-04f5e3fbbc6f?status=approved');
+      const data = await response.json();
+      if (data.mods && data.mods.length > 0) {
+        setMods(data.mods.map((mod: any) => ({
+          id: mod.id,
+          title: mod.title,
+          game: mod.game,
+          category: mod.category,
+          author: mod.author_name || 'Аноним',
+          authorAvatar: mod.author_name ? mod.author_name.substring(0, 2).toUpperCase() : 'AN',
+          downloads: mod.downloads || 0,
+          rating: mod.rating || 0,
+          reviews: mod.review_count || 0,
+          version: mod.version,
+          image: mod.image_emoji || '📦',
+          requirements: mod.requirements || 'Нет требований',
+          description: mod.description,
+        })));
+      }
+    } catch (error) {
+      console.error('Failed to load mods:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredMods = mods.filter((mod) => {
     const matchesSearch = mod.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesGame = selectedGame === 'Все игры' || mod.game === selectedGame;
     const matchesCategory = selectedCategory === 'Все' || mod.category === selectedCategory;
     return matchesSearch && matchesGame && matchesCategory;
   });
 
-  const getRecommendations = (currentMod: typeof MODS_DATA[0]) => {
-    return MODS_DATA.filter(
+  const getRecommendations = (currentMod: typeof mods[0]) => {
+    return mods.filter(
       (mod) =>
         mod.id !== currentMod.id &&
         (mod.game === currentMod.game || mod.category === currentMod.category)
     ).slice(0, 3);
+  };
+
+  const handleUploadClick = () => {
+    if (!isAuthenticated) {
+      setAuthDialogOpen(true);
+    } else {
+      setUploadDialogOpen(true);
+    }
   };
 
   return (
@@ -149,33 +202,70 @@ export default function Index() {
                 <p className="text-xs text-muted-foreground">Платформа модификаций</p>
               </div>
             </div>
-            <nav className="flex gap-6">
-              <Button variant="ghost" size="sm">
+            <nav className="flex items-center gap-4">
+              <Button variant="ghost" size="sm" onClick={() => setShowModeration(false)}>
                 Каталог
               </Button>
-              <Button variant="ghost" size="sm">
-                Разработчики
-              </Button>
-              <Button variant="ghost" size="sm">
-                Контакты
-              </Button>
-              <Button size="sm" className="bg-gradient-to-r from-primary to-accent">
+              {isModerator && (
+                <Button variant="ghost" size="sm" onClick={() => setShowModeration(true)}>
+                  <Icon name="Shield" size={16} className="mr-2" />
+                  Модерация
+                </Button>
+              )}
+              <Button size="sm" onClick={handleUploadClick} className="bg-gradient-to-r from-primary to-accent">
                 <Icon name="Upload" size={16} className="mr-2" />
                 Загрузить мод
               </Button>
+              
+              {isAuthenticated ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="gap-2">
+                      <Avatar className="w-7 h-7">
+                        <AvatarFallback className="text-xs bg-gradient-to-br from-primary to-accent text-primary-foreground">
+                          {user?.username.substring(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      {user?.username}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>
+                      <div className="flex flex-col">
+                        <span>{user?.username}</span>
+                        <span className="text-xs text-muted-foreground font-normal">{user?.role}</span>
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={logout}>
+                      <Icon name="LogOut" size={16} className="mr-2" />
+                      Выйти
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setAuthDialogOpen(true)}>
+                  <Icon name="LogIn" size={16} className="mr-2" />
+                  Войти
+                </Button>
+              )}
             </nav>
           </div>
         </div>
       </header>
 
       <main className="container mx-auto px-4 py-12">
-        <section className="mb-16 text-center animate-fade-in">
-          <h2 className="text-5xl font-bold mb-4 bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">
-            Найди идеальный мод
-          </h2>
-          <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-            Тысячи модификаций для твоих любимых игр. Умные рекомендации на основе твоих предпочтений.
-          </p>
+        {showModeration && isModerator ? (
+          <ModerationPanel />
+        ) : (
+          <>
+            <section className="mb-16 text-center animate-fade-in">
+              <h2 className="text-5xl font-bold mb-4 bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">
+                Найди идеальный мод
+              </h2>
+              <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
+                Тысячи модификаций для твоих любимых игр. Умные рекомендации на основе твоих предпочтений.
+              </p>
 
           <div className="flex gap-4 max-w-4xl mx-auto mb-8">
             <div className="flex-1 relative">
@@ -470,6 +560,8 @@ export default function Index() {
             </CardFooter>
           </Card>
         </section>
+          </>
+        )}
       </main>
 
       <footer className="border-t mt-24 py-8 bg-secondary/50">
@@ -477,6 +569,9 @@ export default function Index() {
           <p>© 2026 ModHub. Платформа для публикации модификаций к играм.</p>
         </div>
       </footer>
+
+      <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
+      <ModUploadDialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen} onSuccess={loadMods} />
     </div>
   );
 }
