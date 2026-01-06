@@ -189,7 +189,7 @@ export default function Index() {
             </div>
             <Select value={selectedGame} onValueChange={setSelectedGame}>
               <SelectTrigger className="w-64 h-12">
-                <SelectValue />
+                <SelectValue placeholder="Выберите игру" />
               </SelectTrigger>
               <SelectContent>
                 {GAMES.map((game) => (
